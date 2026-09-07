@@ -1,111 +1,158 @@
-# ASL Aura Battle — Local MVP
+# ASL Aura Battle
 
-A local, turn-based PvP American Sign Language learning game. Two players see
-each other's live webcam feed over WebRTC, MediaPipe tracks hands, face, and
-upper-body pose in the browser, and a 20-second recording window per round
-feeds a landmark-based grader. After 3 rounds, total Aura Points decide the
-winner.
+A local, real-time PvP American Sign Language learning game. Two players face off over live video, MediaPipe tracks hands, face, and upper-body pose directly in the browser, and a landmark-based grader scores each sign attempt. Includes a solo **Learn** mode for practicing individual signs at your own pace.
 
-## Folder Structure
+**Stack:** React + Vite + Tailwind (frontend) · Node + Express + Socket.io (backend) · MediaPipe Tasks Vision (hand/face/pose tracking) · WebRTC via `simple-peer` (peer video)
+
+---
+
+## Quick Start
+
+```bash
+# 1. Install dependencies
+cd server && npm install
+cd ../client && npm install
+
+# 2. Download the 3 required MediaPipe model files into client/public/
+#    (see "Model Files" section below for links)
+
+# 3. Run the backend (terminal 1)
+cd server && npm start        # → http://localhost:4000
+
+# 4. Run the frontend (terminal 2)
+cd client && npm run dev      # → http://localhost:5173
+```
+
+Open the printed URL in two browser tabs to test both sides of a match locally before playing with someone else over LAN.
+
+---
+
+## Features
+
+- **Battle mode** — two players, 3 timed rounds, live opponent video via WebRTC, Aura Points scoring, rematch/end-game flow.
+- **Learn mode** — practice individual signs against reference images with live hand/face/pose tracking and a pass/fail grader.
+- **In-browser tracking** — hands, face mesh, and upper-body pose via MediaPipe, no server-side ML inference required.
+- **Zero external services** — all game state lives in server memory; no database, no cloud dependency.
+
+---
+
+## Project Structure
 
 ```
 asl-aura-battle/
 ├── server/
 │   ├── package.json
-│   └── server.js
+│   └── server.js              # Express + Socket.io game server
 └── client/
     ├── package.json
     ├── index.html
     ├── vite.config.js
     ├── tailwind.config.js
     ├── postcss.config.js
-    ├── public/                    <- put the 3 .task model files here
+    ├── public/                # ← MediaPipe model files + lesson images go here
     └── src/
         ├── main.jsx
-        ├── App.jsx
-        ├── BattleScreen.jsx
-        ├── useBodyTracking.js
-        ├── usePeerVideo.js
-        ├── gestureScoring.js
+        ├── App.jsx             # Lobby, tab switcher, room create/join
+        ├── BattleScreen.jsx    # Main PvP battle UI
+        ├── LearnTab.jsx        # Solo practice mode
+        ├── useBodyTracking.js  # Hand/face/pose tracking + recording buffer
+        ├── usePeerVideo.js     # WebRTC video, signaled over Socket.io
+        ├── gestureScoring.js   # Grading logic (Battle + Learn)
         └── index.css
 ```
 
-## One-Time Setup
+---
 
-1. Install Node 18+.
-2. Download all three MediaPipe model files into `client/public/`:
-   - `hand_landmarker.task` — https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task
-   - `face_landmarker.task` — https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
-   - `pose_landmarker_lite.task` — https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task
-3. `cd server && npm install`
-4. `cd client && npm install`
+## Setup
 
-## Running Locally
+### 1. Prerequisites
+Node.js 18+ (tested on 20 and 22).
 
-**Terminal 1:** `cd server && npm start` → `http://localhost:4000`
-(If `EADDRINUSE`: `lsof -i :4000` then `kill -9 <PID>`, or `PORT=4001 npm start`.)
+### 2. Install dependencies
+```bash
+cd server && npm install
+cd ../client && npm install
+```
 
-**Terminal 2:** `cd client && npm run dev` → open the printed URL in two tabs.
+### 3. Model files
+Download these three files into `client/public/`:
 
-## Fixed in This Version: Opponent Video Never Connecting
+| File | Source |
+|---|---|
+| `hand_landmarker.task` | [Download](https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task) |
+| `face_landmarker.task` | [Download](https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task) |
+| `pose_landmarker_lite.task` | [Download](https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task) |
 
-A real bug was found and fixed: the room creator's WebRTC connection used to
-start the instant THEIR OWN webcam was ready, which happens immediately after
-`create_room` — before the second player has joined. The very first
-connection offer was silently dropped server-side (there was no one to relay
-it to yet), permanently breaking the video handshake even after the second
-player arrived moments later.
+```bash
+cd client/public
+curl -L -o hand_landmarker.task <url>
+curl -L -o face_landmarker.task <url>
+curl -L -o pose_landmarker_lite.task <url>
+```
 
-Fixed by:
-1. Gating WebRTC connection start on `bothPlayersPresent` (both players
-   confirmed in the room), not just "my own camera is ready."
-2. Buffering any inbound signal that arrives before the local connection
-   object exists yet, and flushing it once ready — a defensive fix for any
-   remaining timing race between the two browsers.
+### 4. Lesson images (Learn mode)
+Place your reference sign images in `client/public/` (e.g. `hello.jpg`, `thanks.jpg`) — filenames must match the `image` field in `LESSONS` inside `LearnTab.jsx`.
+
+---
+
+## Running
+
+| Terminal | Command | Result |
+|---|---|---|
+| 1 (backend) | `cd server && npm start` | Serves on `http://localhost:4000` |
+| 2 (frontend) | `cd client && npm run dev` | Serves on `http://localhost:5173` |
+
+**Port already in use?**
+```bash
+lsof -ti :4000 | xargs kill -9      # kill whatever's on port 4000
+# or run on a different port:
+PORT=4001 npm start                 # then update SOCKET_URL in App.jsx to match
+```
+
+---
+
+## Playing Over LAN
+
+1. Find your machine's local IP: `ipconfig getifaddr en0` (Mac).
+2. Update `SOCKET_URL` in `client/src/App.jsx`:
+   ```js
+   const SOCKET_URL = "http://<YOUR_LAN_IP>:4000";
+   ```
+3. Restart the frontend dev server.
+4. Your opponent visits `http://<YOUR_LAN_IP>:5173` — **not** `localhost`.
+
+**Requirements:**
+- Both devices on the same Wi-Fi network, with AP isolation disabled (a personal hotspot works as a fallback).
+- Webcam access and WebRTC both require a secure context over LAN. Either enable Chrome's `chrome://flags/#unsafely-treat-insecure-origin-as-secure` for your IP, or set up local HTTPS via `mkcert`.
+- Only STUN is configured for WebRTC (no TURN). Strict corporate/campus networks may block direct peer connections entirely.
+
+---
 
 ## Game Flow
 
-1. Player A clicks **Create Room**, shares the 4-letter code.
-2. Player B clicks **Join Room**. Both live video feeds should now connect
-   to each other via WebRTC.
-3. Both click **I'm Ready!**.
-4. Each round opens with a "Ready • Set • Go!" beat.
-5. A 20-second timer AND a landmark recording start simultaneously. A
-   pulsing red dot + progress bar show recording is live.
-6. Click **Submit Sign** to stop your recording early and send it for
-   grading, or let the 20s run out (auto-submits whatever was recorded).
-7. The round ends on both-submitted OR timeout, whichever comes first.
-8. After 3 rounds, total Aura Points decide the winner (ties broken by speed).
+1. Player A clicks **Create Room** and shares the 4-letter code.
+2. Player B clicks **Join Room** and enters the code — both video feeds connect via WebRTC.
+3. Both players click **I'm Ready!**.
+4. Each round opens with a 3-second "Ready · Set · Go!" countdown showing the prompt.
+5. A 20-second timer and landmark recording start together. Click **Submit Sign** to grade early, or let the timer expire.
+6. The round ends once both players submit, or the timer runs out — whichever is first.
+7. After 3 rounds, total Aura Points decide the winner (ties broken by cumulative response speed). Players can **Rematch** (resets score, same room) or **End Game** (returns to lobby).
 
-## How Grading Works (Honest Caveat)
+---
 
-`gestureScoring.js` grades the recorded sequence using presence ratio (was
-your hand actually visible) and motion energy (did it move appropriately for
-the prompt) — NOT a trained sign-classification model, which needs labeled
-ASL data out of scope for a hackathon MVP. Populate `REFERENCE_SEQUENCES`
-with your own captured correct signs to switch to real DTW-based comparison
-via the included `dtwDistance()` function.
+## Grading Methodology
 
-## Playing Across Two Machines (Same Wi-Fi)
+Grading is a **landmark-based heuristic**, not a trained sign-classification model — building one requires a labeled ASL dataset, which is outside the scope of this project. Instead, it scores:
 
-1. Find your LAN IP: `ipconfig getifaddr en0` (Mac).
-2. In `client/src/App.jsx`, change `SOCKET_URL` to `"http://<YOUR_IP>:4000"`.
-   Restart the frontend.
-3. Friend visits `http://<YOUR_IP>:5173` (not `localhost`).
-4. Webcam AND WebRTC over LAN need HTTPS or the Chrome insecure-origin flag
-   (`chrome://flags/#unsafely-treat-insecure-origin-as-secure`).
-5. Same Wi-Fi, AP isolation off. Phone hotspot as fallback.
-6. If video still won't connect across two separate networks, only STUN is
-   configured (no TURN) — strict NAT/corporate Wi-Fi may block direct P2P
-   entirely. Ask if you want a TURN provider wired in.
+- **Presence** — how consistently the hand was tracked during the attempt.
+- **Motion appropriateness** (Battle mode) — whether hand movement matched what's expected for single-word vs. multi-word prompts.
+- **Centeredness/stability** (Learn mode) — how steadily the hand was held in frame.
 
-## Known MVP Shortcuts
+To upgrade to true reference-based grading, capture correct landmark sequences per prompt and populate `REFERENCE_SEQUENCES` in `gestureScoring.js` — the included `dtwDistance()` function will then be used automatically for real comparison via Dynamic Time Warping.
 
-- Grading is a landmark heuristic, not a trained classifier.
-- Client-computed accuracy is trusted by the server as-is.
-- Loading 3 MediaPipe models is heavier than 1 — expect a longer load time.
-- Face and pose landmarks are tracked/drawn but not yet factored into the
-  grading score (hand-only for now).
+**Note:** accuracy is computed client-side and trusted by the server as-is. Sufficient for casual/demo use; not tamper-resistant against a technical user inspecting DevTools.
+
+---
 
 ## Socket.io Event Reference
 
@@ -115,26 +162,37 @@ via the included `dtwDistance()` function.
 | `join_room` | client → server | `{ roomCode, name }` → callback `{ success, roomCode?, error? }` |
 | `player_ready` | client → server | `{ roomCode }` |
 | `submit_sign` | client → server | `{ roomCode, accuracy }` |
-| `webrtc_signal` | both directions | `{ roomCode, signal }` (relayed, never stored) |
-| `game_state_update` | server → client | `{ code, players: [{id,name,score,ready}], round, totalRounds, prompt, status }` |
+| `request_rematch` | client → server | `{ roomCode }` |
+| `leave_room` | client → server | `{ roomCode }` |
+| `webrtc_signal` | both directions | `{ roomCode, signal }` (relayed only, never stored) |
+| `game_state_update` | server → client | `{ code, players: [{id, name, score, ready, rematchRequested}], round, totalRounds, prompt, status }` |
 | `round_countdown` | server → client | `{ round, prompt }` |
 | `round_start` | server → client | `{ round, prompt, durationMs }` (20000) |
-| `round_result` | server → client | `{ round, results: [{ id, name, roundAccuracy, totalScore }] }` |
+| `round_result` | server → client | `{ round, results: [{id, name, roundAccuracy, totalScore}] }` |
 | `game_over` | server → client | `{ winnerId, forfeit?, finalScores }` |
+| `rematch_started` | server → client | *(no payload — clients reset local UI)* |
 | `opponent_left` | server → client | `{ id }` |
 
-`status`: `"waiting"` → `"ready_check"` → `"in_progress"` → `"finished"`.
+**Room status lifecycle:** `waiting` → `ready_check` → `in_progress` → `finished` → (rematch) back to `ready_check`, or room deleted on `leave_room` / disconnect.
+
+---
+
+## Known Limitations
+
+- Grading is a heuristic, not a trained classifier (see above).
+- Client-reported accuracy is trusted without server-side verification.
+- Loading three MediaPipe models concurrently increases initial load time versus a single-model setup.
+- Face and pose landmarks are tracked and rendered but not yet factored into the grading score (hand landmarks only, currently).
+
+---
 
 ## Troubleshooting
 
-- **"vite: command not found" / "Cannot find module 'express'"** — run
-  `npm install` in the respective folder.
-- **`EADDRINUSE` on port 4000** — see above.
-- **Friend can't connect with your room code** — they're on `localhost`
-  instead of your LAN IP.
-- **No hand/face/pose overlay** — confirm all three `.task` files are in
-  `client/public/`, check console for 404s.
-- **Opponent's video never connects** — should be fixed in this version; if
-  it still fails across two networks, you likely need a TURN server.
-- **SharedArrayBuffer / WASM errors** — confirm COOP/COEP headers in
-  `vite.config.js`, hard-refresh after any config change.
+| Symptom | Fix |
+|---|---|
+| `vite: command not found` / `Cannot find module 'express'` | Run `npm install` in the affected folder (`client/` or `server/`). |
+| `EADDRINUSE` on port 4000 | `lsof -ti :4000 \| xargs kill -9`, then retry `npm start`. |
+| Opponent can't connect with your room code | They're likely using `localhost` instead of your LAN IP — see [Playing Over LAN](#playing-over-lan). |
+| No hand/face/pose overlay | Confirm all three `.task` files are in `client/public/`; check browser console for 404s. |
+| Opponent's video never connects | Check both browser consoles for WebRTC errors — strict networks may require a TURN server. |
+| `SharedArrayBuffer` / WASM errors | Confirm COOP/COEP headers are set in `vite.config.js`; hard-refresh after any config change. |
